@@ -147,30 +147,40 @@ data class Message(val toId: String, val content: String)
 class ClientHandler (val socket: Socket, val ips: InputStream, val ops: OutputStream, val clientId: String, val messageQueue: Queue<Message>) : Thread() {
     var noneReadMsgs: Queue<Message> = LinkedList()
     var dogFood= 50
+    val scope = CoroutineScope(Dispatchers.Default)
+    lateinit var job1 : Job
+    lateinit var job2 : Job
     init{
         noneReadMsgs.addAll(messageQueue)
     }
 
     override fun interrupt() {
         print("interrupt")
+        close()
         super.interrupt()
     }
 
+    fun close(){
+        job1.cancel()
+        job2.cancel()
+        ips.close()
+        ops.close()
+    }
+
     override fun run() {
-        val scope = CoroutineScope(Dispatchers.Default)
 
         try {
             val `in` = BufferedReader(InputStreamReader(ips))
             val out = PrintWriter(ops, true)
             //远程喂狗
-            scope.launch {
+            job1 = scope.launch {
                 while (true){
                     delay(1000)
                     out.println(mapToJson(mapOf("info" to "feed_dog")))
                 }
             }
             //server's dog
-            scope.launch {
+            job2 = scope.launch {
                 while (true) {
                     delay(1000)
                     dogFood--
@@ -194,7 +204,7 @@ class ClientHandler (val socket: Socket, val ips: InputStream, val ops: OutputSt
                     val inputLine = `in`.readLine()
                     //println("receive $clientId: $inputLine")
                     if (inputLine == null || inputLine == "bye"){
-                        scope.cancel()
+                        close()
                         clients.remove(clientId)
                         break
                     }  // 检测断开连接
@@ -244,6 +254,7 @@ class ClientHandler (val socket: Socket, val ips: InputStream, val ops: OutputSt
             try {
                 clients.remove(clientId)
                 scope.cancel()
+                close()
             } catch (e: IOException) {
                 e.printStackTrace()
             }
